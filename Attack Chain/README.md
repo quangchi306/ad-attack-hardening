@@ -2,7 +2,7 @@
 
 > Attack simulation lab reproducing classic AD attack techniques (MITRE ATT&CK): **AS-REP Roasting → Password Reuse → Pass-the-Hash → Kerberoasting → ACL Abuse**, starting from an unauthenticated foothold and ending with full **Domain Admin** compromise.
 >
-> The infrastructure build-out and the Hardening countermeasures (GPO, LAPS, Protected Users, Kerberos RC4→AES upgrade) are covered separately by other team members — this write-up only covers the **attack simulation**.
+> The infrastructure build-out and the Hardening countermeasures (GPO, LAPS, Protected Users, Kerberos RC4→AES upgrade) are covered separately by other team members - this write-up only covers the **attack simulation**.
 
 ## Lab Topology
 
@@ -87,11 +87,11 @@ rpcclient $> lsaquery
 ![rpcclient null session](02-rpcclient-null-session.png)
 *`Domain Name: ADLAB`, full Domain SID leaked with zero authentication.*
 
-**Attack vector:** anonymous enumeration / null session allowed on the domain, leaking the Domain SID without authentication — later used to compute RIDs for every account (**T1087.002**).
+**Attack vector:** anonymous enumeration / null session allowed on the domain, leaking the Domain SID without authentication - later used to compute RIDs for every account (**T1087.002**).
 
 ## 2. Valid Username Enumeration
 
-Kerberos pre-authentication reveals, via distinct AS-REQ error codes, whether a given username exists in the domain — without ever needing a password, and without generating a failed-logon event on the DC.
+Kerberos pre-authentication reveals, via distinct AS-REQ error codes, whether a given username exists in the domain - without ever needing a password, and without generating a failed-logon event on the DC.
 
 ```bash
 ~/go/bin/kerbrute userenum -d adlab.local --dc 10.10.10.10 -t 10 targeted.txt
@@ -286,12 +286,3 @@ nxc winrm 10.10.10.10 -u svc_sql -p '1qaz2wsx'
 | 5 | Intermediate group `ITSupport` misconfigured with `GenericAll` over `Domain Admins`, violating least-privilege | BloodHound-guided ACL abuse |
 
 These findings map directly to the Hardening measures implemented by the rest of the team: GPO password/pre-auth policy enforcement, LAPS for local admin passwords, the Protected Users group for sensitive accounts, and upgrading Kerberos encryption from RC4 to AES.
-
-## Repo Contents
-
-```
-.
-├── README.md                  # this write-up
-├── AD_Attack_Chain.drawio     # editable attack-path diagram (open at app.diagrams.net)
-└──                # all terminal/GUI evidence referenced above
-```
